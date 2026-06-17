@@ -14,7 +14,6 @@ export function initMinesweeperGame() {
     let minesLeft = MINE_COUNT;
     let tilesRevealedCount = 0;
 
-    // --- MOVE 1: DECLARED FIRST SO REVEALTILE CAN ACCESS IT ---
     function revealAllMines() {
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
@@ -27,50 +26,77 @@ export function initMinesweeperGame() {
         }
     }
 
-    // --- MOVE 2: DECLARED EARLY FOR ACCESS ---
     function endGame(won) {
         isGameOver = true;
         if (won) {
-            statusElement.textContent = "Victory! Safe Zone Cleared 😎🎉";
+            statusElement.textContent = "Victory! Safe Zone Cleared! 🏆";
         } else {
-            statusElement.textContent = "Boom! Game Over 💥👾";
+            statusElement.textContent = "Boom! Game Over 💥";
             revealAllMines();
         }
     }
 
-    // --- MOVE 3: DECLARED EARLY FOR RECURSIVE CALCULATIONS ---
+    function countNeighbors(row, col) {
+        let count = 0;
+        for (let r = row - 1; r <= row + 1; r++) {
+            for (let c = col - 1; c <= col + 1; c++) {
+                if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+                    if (board[r][c].isMine) count++;
+                }
+            }
+        }
+        return count;
+    }
+
     function revealEmptyNeighbors(row, col) {
-        for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-                let nr = row + dr;
-                let nc = col + dc;
-                if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
-                    revealTile(board[nr][nc]);
+        for (let r = row - 1; r <= row + 1; r++) {
+            for (let c = col - 1; c <= col + 1; c++) {
+                if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+                    let neighbor = board[r][c];
+                    if (!neighbor.isRevealed && !neighbor.isFlagged && !neighbor.isMine) {
+                        neighbor.isRevealed = true;
+                        neighbor.element.classList.add("revealed");
+                        tilesRevealedCount++;
+
+                        if (neighbor.neighborMines > 0) {
+                            neighbor.element.textContent = neighbor.neighborMines;
+                            neighbor.element.classList.add(`count-${neighbor.neighborMines}`);
+                        } else {
+                            revealEmptyNeighbors(r, c);
+                        }
+                    }
                 }
             }
         }
     }
 
-    // --- MOVE 4: REVEALTILE PLACED IN PLAIN SIGHT FOR CREATEBOARD ---
     function revealTile(tile) {
-        if (isGameOver || tile.isRevealed || tile.isFlagged || boardElement.offsetParent === null) return;
+        if (isGameOver || tile.isRevealed || tile.isFlagged) return;
 
         tile.isRevealed = true;
-        tilesRevealedCount++;
         tile.element.classList.add("revealed");
+        tilesRevealedCount++;
 
         if (tile.isMine) {
             endGame(false);
-            tile.element.classList.add("mine");
-            tile.element.textContent = "💣";
             return;
         }
 
         if (tile.neighborMines > 0) {
             tile.element.textContent = tile.neighborMines;
-            tile.element.setAttribute("data-count", tile.neighborMines);
+            tile.element.classList.add(`count-${tile.neighborMines}`);
         } else {
-            revealEmptyNeighbors(tile.r, tile.c);
+            let foundRow = -1,
+                foundCol = -1;
+            for (let r = 0; r < ROWS; r++) {
+                const cIndex = board[r].indexOf(tile);
+                if (cIndex !== -1) {
+                    foundRow = r;
+                    foundCol = cIndex;
+                    break;
+                }
+            }
+            revealEmptyNeighbors(foundRow, foundCol);
         }
 
         if (tilesRevealedCount === ROWS * COLS - MINE_COUNT) {
@@ -78,9 +104,8 @@ export function initMinesweeperGame() {
         }
     }
 
-    // --- MOVE 5: TOGGLEFLAG PLACED IN PLAIN SIGHT FOR CREATEBOARD ---
     function toggleFlag(tile) {
-        if (isGameOver || tile.isRevealed || boardElement.offsetParent === null) return;
+        if (isGameOver || tile.isRevealed) return;
 
         if (!tile.isFlagged) {
             tile.isFlagged = true;
@@ -93,39 +118,21 @@ export function initMinesweeperGame() {
             tile.element.textContent = "";
             minesLeft++;
         }
-        statusElement.textContent = `Mines Left: ${minesLeft}`;
+        statusElement.textContent = `Mines Remaining: ${minesLeft}`;
     }
 
-    // --- MOVE 6: NEIGHBOR DETECTOR DECLARED ---
-    function countNeighbors(row, col) {
-        let count = 0;
-        for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-                let nr = row + dr;
-                let nc = col + dc;
-                if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
-                    if (board[nr][nc].isMine) count++;
-                }
-            }
-        }
-        return count;
-    }
-
-    // --- MOVE 7: PLACED AT THE BOTTOM SO IT SEES EVERYTHING ABOVE IT ---
     function createBoard() {
         boardElement.innerHTML = "";
         board = [];
         isGameOver = false;
         minesLeft = MINE_COUNT;
         tilesRevealedCount = 0;
-        statusElement.textContent = `Mines Left: ${minesLeft}`;
+        statusElement.textContent = `Mines Remaining: ${minesLeft}`;
 
         for (let r = 0; r < ROWS; r++) {
             let row = [];
             for (let c = 0; c < COLS; c++) {
                 let tile = {
-                    r: r,
-                    c: c,
                     isMine: false,
                     isRevealed: false,
                     isFlagged: false,
@@ -135,9 +142,37 @@ export function initMinesweeperGame() {
 
                 tile.element.classList.add("mine-tile");
 
-                // Works perfectly now because revealTile and toggleFlag are already built!
-                tile.element.addEventListener("click", () => revealTile(tile));
+                // ADVANCED MOBILE LONG-PRESS LOGIC (Flags on hold, Reveals on tap)
+                let touchTimer = null;
+                let isLongPress = false;
 
+                tile.element.addEventListener(
+                    "touchstart",
+                    (e) => {
+                        isLongPress = false;
+                        touchTimer = setTimeout(() => {
+                            isLongPress = true;
+                            toggleFlag(tile);
+                        }, 500); // 500 milliseconds hold triggers flag toggle
+                    },
+                    { passive: true }
+                );
+
+                tile.element.addEventListener("touchend", (e) => {
+                    if (touchTimer) clearTimeout(touchTimer);
+
+                    if (!isLongPress) {
+                        revealTile(tile);
+                    }
+
+                    // ✨ FIXED LINE: Safely prevent duplicate ghost-clicks without breaking modern browser rules
+                    if (e.cancelable) {
+                        e.preventDefault();
+                    }
+                });
+
+                // Desktop mouse fallbacks
+                tile.element.addEventListener("click", () => revealTile(tile));
                 tile.element.addEventListener("contextmenu", (e) => {
                     e.preventDefault();
                     toggleFlag(tile);

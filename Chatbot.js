@@ -3,6 +3,8 @@ export function initChatbot() {
     const chatInput = document.getElementById("chat-input");
     const sendBtn = document.getElementById("chat-send-btn");
 
+    if (!chatBox || !chatInput || !sendBtn) return;
+
     function appendMessage(text, isBot = true) {
         const msgDiv = document.createElement("div");
         msgDiv.className = `chat-message ${isBot ? 'bot-msg' : 'user-msg'}`;
@@ -30,14 +32,7 @@ export function initChatbot() {
         if (query.includes("snake")) {
             return "In Snake, avoid making sharp, sudden double-back turns, or you might accidentally crash into your own neck!";
         }
-        if (query.includes("hello") || query.includes("hi ") || query.includes("hey")) {
-            return "Hello there! I'm your Arcade AI assistant. Ask me anything about Poker, Wordle, Snake, or general gaming tips!";
-        }
-        if (query.includes("cheat") || query.includes("win")) {
-            return "Haha, no cheat codes here! Just pure tactical skill. Which game are you trying to beat right now?";
-        }
-
-        return null; // Return null if it needs to fallback to generic AI banter
+        return null;
     }
 
     async function handleSend() {
@@ -50,14 +45,12 @@ export function initChatbot() {
 
         // Show a brief placeholder loading state
         setTimeout(async () => {
-            // 1. Try checking for local game smart answers first
             const localAnswer = getLocalResponse(text);
             if (localAnswer) {
                 appendMessage(localAnswer, true);
                 return;
             }
 
-            // 2. Free AI Server fallback simulation
             try {
                 const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(text)}&format=json`);
                 const data = await response.json();
@@ -73,9 +66,29 @@ export function initChatbot() {
         }, 500);
     }
 
-    // Wire listeners up cleanly
-    sendBtn.onclick = handleSend;
+    // RESPONSIVE MOBILE WIRE PIPELINE
+    sendBtn.onclick = null; // Clear standard handlers
+
+    // Listen to touchstart instantly on mobile to bypass 300ms delay
+    sendBtn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        handleSend();
+    }, { passive: false });
+
+    sendBtn.addEventListener("click", (e) => {
+        handleSend();
+    });
+
     chatInput.onkeydown = (e) => {
         if (e.key === "Enter") handleSend();
     };
+
+    // Smooth Mobile Viewport Resizing Alignment
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => {
+            if (document.activeElement === chatInput) {
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+        });
+    }
 }

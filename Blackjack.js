@@ -1,4 +1,4 @@
-// Keep track of the active handles globally so we can clean up routing pipelines
+// Keep track of the active handles globally so we can clean up routing pipelines safely
 let currentBJBetHandlers = [];
 let currentBJHitHandler = null;
 let currentBJStandHandler = null;
@@ -18,6 +18,8 @@ export function initBlackjack() {
     const actionControls = document.getElementById("action-controls");
     const nextBtn = document.getElementById("bj-next-btn");
 
+    if (!dealerCardsContainer || !playerCardsContainer || !blackjackMsg) return;
+
     let deck = [];
     let playerHand = [];
     let dealerHand = [];
@@ -35,89 +37,82 @@ export function initBlackjack() {
     ];
 
     function createDeck() {
-        let newDeck = [];
+        deck = [];
         for (let suit of suits) {
             for (let val of values) {
-                newDeck.push({ ...val, suit });
+                deck.push({ ...val, suit: suit });
             }
         }
-        return newDeck;
     }
 
-    function shuffleDeck(targetDeck) {
-        for (let i = targetDeck.length - 1; i > 0; i--) {
+    function shuffleDeck() {
+        for (let i = deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [targetDeck[i], targetDeck[j]] = [targetDeck[j], targetDeck[i]];
+            [deck[i], deck[j]] = [deck[j], deck[i]];
         }
-        return targetDeck;
     }
 
-    function calculateHandScore(hand) {
-        if (!hand || hand.length === 0) return 0;
+    function getHandScore(hand) {
         let score = 0;
-        let aceCount = 0;
+        let aces = 0;
         for (let card of hand) {
             score += card.value;
-            if (card.name === 'A') aceCount++;
+            if (card.name === 'A') aces++;
         }
-        while (score > 21 && aceCount > 0) {
+        while (score > 21 && aces > 0) {
             score -= 10;
-            aceCount--;
+            aces--;
         }
         return score;
     }
 
     function renderCard(card, container, isHidden = false) {
-        if (!card) return;
         const cardDiv = document.createElement("div");
         cardDiv.className = "bj-card";
         if (card.suit === '♥' || card.suit === '♦') {
             cardDiv.classList.add("card-red");
         }
-
         if (isHidden) {
             cardDiv.classList.add("card-hidden");
+            cardDiv.textContent = "?";
         } else {
-            cardDiv.innerHTML = `<div>${card.name}</div><div>${card.suit}</div>`;
+            cardDiv.innerHTML = `${card.name}<br>${card.suit}`;
         }
         container.appendChild(cardDiv);
     }
 
-    function updateUI(hideDealerCard = true) {
+    function updateUI(hideDealerHoleCard = true) {
         playerCardsContainer.innerHTML = "";
         dealerCardsContainer.innerHTML = "";
 
         playerHand.forEach(card => renderCard(card, playerCardsContainer));
-        dealerHand.forEach((card, idx) => {
-            renderCard(card, dealerCardsContainer, hideDealerCard && idx === 1);
+        dealerHand.forEach((card, index) => {
+            renderCard(card, dealerCardsContainer, hideDealerHoleCard && index === 1);
         });
 
-        const pScore = calculateHandScore(playerHand);
-        playerScoreInfo.textContent = pScore > 0 ? pScore : "";
-
-        if (hideDealerCard) {
-            dealerScoreInfo.textContent = dealerHand[0] ? dealerHand[0].value : "";
+        playerScoreInfo.textContent = getHandScore(playerHand);
+        if (hideDealerHoleCard && dealerHand.length > 0) {
+            dealerScoreInfo.textContent = dealerHand[0].value;
         } else {
-            const dScore = calculateHandScore(dealerHand);
-            dealerScoreInfo.textContent = dScore > 0 ? dScore : "";
+            dealerScoreInfo.textContent = getHandScore(dealerHand);
         }
 
         walletDisplay.textContent = wallet;
         betDisplay.textContent = currentBet;
     }
 
-    function startRound(betAmount) {
-        if (isRoundActive) return;
-        if (wallet < betAmount) {
-            blackjackMsg.textContent = "Insufficient funds for that bet!";
-            return;
-        }
+    function startRound(amount) {
+        const blackjackPage = document.getElementById("blackjack-page");
+        if (blackjackPage && !blackjackPage.classList.contains("active")) return;
+        if (isRoundActive || wallet < amount) return;
 
-        wallet -= betAmount;
-        currentBet = betAmount;
+        currentBet = amount;
+        wallet -= amount;
         isRoundActive = true;
 
-        deck = shuffleDeck(createDeck());
+        createDeck();
+        shuffleDeck();
+
         playerHand = [deck.pop(), deck.pop()];
         dealerHand = [deck.pop(), deck.pop()];
 
@@ -128,8 +123,8 @@ export function initBlackjack() {
 
         updateUI(true);
 
-        if (calculateHandScore(playerHand) === 21) {
-            endRound("blackjack");
+        if (getHandScore(playerHand) === 21) {
+            stand();
         }
     }
 
@@ -138,126 +133,104 @@ export function initBlackjack() {
         playerHand.push(deck.pop());
         updateUI(true);
 
-        if (calculateHandScore(playerHand) > 21) {
-            endRound("bust");
+        if (getHandScore(playerHand) > 21) {
+            blackjackMsg.textContent = "Bust! Dealer wins! 💥";
+            endRound(false);
         }
     }
 
     function stand() {
         if (!isRoundActive) return;
 
-        updateUI(false);
-
-        let dealerScore = calculateHandScore(dealerHand);
-        const botDealerLoop = setInterval(() => {
-            // Check if user moved away from blackjack screen to prevent memory leaks
-            const section = document.getElementById("blackjack-page");
-            if (section && !section.classList.contains("active")) {
-                clearInterval(botDealerLoop);
-                return;
-            }
-
-            if (dealerScore < 17) {
-                dealerHand.push(deck.pop());
-                updateUI(false);
-                dealerScore = calculateHandScore(dealerHand);
-            } else {
-                clearInterval(botDealerLoop);
-                evaluateWinner();
-            }
-        }, 400);
-    }
-
-    function evaluateWinner() {
-        const pScore = calculateHandScore(playerHand);
-        const dScore = calculateHandScore(dealerHand);
-
-        if (dScore > 21) endRound("dealer-bust");
-        else if (pScore > dScore) endRound("win");
-        else if (dScore > pScore) endRound("lose");
-        else endRound("push");
-    }
-
-    function endRound(outcome) {
-        isRoundActive = false;
-        actionControls.style.display = "none";
-        nextBtn.style.display = "block";
+        while (getHandScore(dealerHand) < 17) {
+            dealerHand.push(deck.pop());
+        }
 
         updateUI(false);
 
-        if (outcome === "blackjack") {
-            const winnings = Math.floor(currentBet * 2.5);
-            wallet += winnings;
-            blackjackMsg.textContent = `🎉 Blackjack! Won $${winnings}!`;
-        } else if (outcome === "win" || outcome === "dealer-bust") {
+        const pScore = getHandScore(playerHand);
+        const dScore = getHandScore(dealerHand);
+
+        if (dScore > 21) {
+            blackjackMsg.textContent = "Dealer busts! You win! 🎉";
             wallet += currentBet * 2;
-            blackjackMsg.textContent = `👍 You Win! Won $${currentBet * 2}!`;
-        } else if (outcome === "bust") {
-            blackjackMsg.textContent = "💥 Busted! You went over 21.";
-        } else if (outcome === "lose") {
-            blackjackMsg.textContent = `🤖 Dealer wins this round.`;
-        } else if (outcome === "push") {
+        } else if (pScore > dScore) {
+            blackjackMsg.textContent = "You win! 🏆";
+            wallet += currentBet * 2;
+        } else if (pScore < dScore) {
+            blackjackMsg.textContent = "Dealer wins. 💸";
+        } else {
+            blackjackMsg.textContent = "It's a Push! 🤝";
             wallet += currentBet;
-            blackjackMsg.textContent = "⚖️ Push! It's a tie.";
         }
 
+        endRound(true);
+    }
+
+    function endRound(showAllDealerCards) {
+        isRoundActive = false;
         currentBet = 0;
-        betDisplay.textContent = currentBet;
-        walletDisplay.textContent = wallet;
-
-        if (wallet <= 0) {
-            blackjackMsg.textContent = "💸 Game Over! Out of money. Fresh $500 added!";
-            wallet = 500;
-            walletDisplay.textContent = wallet;
-        }
+        updateUI(!showAllDealerCards);
+        actionControls.style.display = "none";
+        nextBtn.style.display = "inline-block";
     }
 
     function prepareNextRound() {
-        isRoundActive = false;
         bettingControls.style.display = "flex";
         actionControls.style.display = "none";
         nextBtn.style.display = "none";
-        blackjackMsg.textContent = "Place your bet for the next round!";
-
+        blackjackMsg.textContent = "Place your bet to deal!";
         playerHand = [];
         dealerHand = [];
         updateUI(true);
     }
 
-    // CLEANUP PIPELINE: Remove older handlers to keep actions clean
-    const oldBetBtns = document.querySelectorAll(".bet-btn");
-    oldBetBtns.forEach((btn, index) => {
-        if (currentBJBetHandlers[index]) {
-            btn.removeEventListener("click", currentBJBetHandlers[index]);
-        }
-    });
+    // UNIFIED RESPONSIVE TOUCH ENGINE (Wipes layout click delays)
+    function attachMobileControl(btnId, actionCallback) {
+        const el = document.getElementById(btnId);
+        if (!el) return null;
 
-    currentBJBetHandlers = [];
-    oldBetBtns.forEach((btn) => {
-        const handler = () => {
-            const amount = parseInt(btn.getAttribute("data-amount"));
+        // Clone node to drop stacked baseline listeners cleanly
+        const freshEl = el.cloneNode(true);
+        el.replaceWith(freshEl);
+
+        freshEl.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            actionCallback();
+        }, { passive: false });
+
+        freshEl.addEventListener("click", () => {
+            actionCallback();
+        });
+
+        return actionCallback;
+    }
+
+    // Rebind Action Keys
+    currentBJHitHandler = attachMobileControl("bj-hit-btn", hit);
+    currentBJStandHandler = attachMobileControl("bj-stand-btn", stand);
+    currentBJNextHandler = attachMobileControl("bj-next-btn", prepareNextRound);
+
+    // Rebind Casino Bets chips
+    const betBtns = document.querySelectorAll(".bet-btn");
+    betBtns.forEach((btn, index) => {
+        const freshBtn = btn.cloneNode(true);
+        btn.replaceWith(freshBtn);
+
+        const betAction = () => {
+            const amount = parseInt(freshBtn.getAttribute("data-amount"));
             startRound(amount);
         };
-        currentBJBetHandlers.push(handler);
-        btn.addEventListener("click", handler);
+
+        freshBtn.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            betAction();
+        }, { passive: false });
+
+        freshBtn.addEventListener("click", () => {
+            betAction();
+        });
     });
 
-    const hitElement = document.getElementById("bj-hit-btn");
-    const standElement = document.getElementById("bj-stand-btn");
-    const nextElement = document.getElementById("bj-next-btn");
-
-    if (currentBJHitHandler) hitElement.removeEventListener("click", currentBJHitHandler);
-    if (currentBJStandHandler) standElement.removeEventListener("click", currentBJStandHandler);
-    if (currentBJNextHandler) nextElement.removeEventListener("click", currentBJNextHandler);
-
-    currentBJHitHandler = hit;
-    currentBJStandHandler = stand;
-    currentBJNextHandler = prepareNextRound;
-
-    hitElement.addEventListener("click", currentBJHitHandler);
-    standElement.addEventListener("click", currentBJStandHandler);
-    nextElement.addEventListener("click", currentBJNextHandler);
-
-    // Initial setup reset
     prepareNextRound();
 }

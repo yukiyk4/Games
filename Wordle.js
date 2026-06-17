@@ -6,10 +6,11 @@ export function initWordle() {
     const msgDisplay = document.getElementById("wordle-msg");
     const resetBtn = document.getElementById("wordle-reset-btn");
 
-    const rowIds = ["kb-row-1", "kb-row-2", "kb-row-3"];
-    const kbRows = rowIds.map(id => document.getElementById(id));
+    if (!gridContainer || !msgDisplay || !resetBtn) return;
 
-    // FIXED: All words are strictly curated to exactly 5 letters long!
+    const rowIds = ["kb-row-1", "kb-row-2", "kb-row-3"];
+    const kbRows = rowIds.map((id) => document.getElementById(id));
+
     const dictionary = [
         "APPLE", "BEACH", "CHIPS", "DRIVE", "EARTH",
         "FLAME", "GUIDE", "HOUSE", "INDEX", "JUICE",
@@ -33,116 +34,95 @@ export function initWordle() {
 
     function setupGame() {
         gridContainer.innerHTML = "";
-        kbRows.forEach(row => row.innerHTML = "");
-
-        secretWord = dictionary[Math.floor(Math.random() * dictionary.length)];
+        isGameOver = false;
         currentRow = 0;
         currentCol = 0;
         guessBuffer = ["", "", "", "", ""];
-        isGameOver = false;
 
-        msgDisplay.textContent = "Type a 5-letter word to begin!";
+        secretWord = dictionary[Math.floor(Math.random() * dictionary.length)];
 
-        // Generate Grid Elements
-        for (let r = 0; r < 6; r++) {
-            const rowDiv = document.createElement("div");
-            rowDiv.className = "wordle-row";
-            for (let c = 0; c < 5; c++) {
-                const tileDiv = document.createElement("div");
-                tileDiv.className = "wordle-tile";
-                tileDiv.id = `tile-${r}-${c}`;
-                rowDiv.appendChild(tileDiv);
-            }
-            gridContainer.appendChild(rowDiv);
+        // ✨ FIXED: Generate 30 flat loose tiles.
+        // Your CSS (#wordle-grid grid-template-columns: repeat(5, 1fr)) handles the wrapping!
+        for (let i = 0; i < 30; i++) {
+            const tile = document.createElement("div");
+            tile.className = "wordle-tile";
+            gridContainer.appendChild(tile);
         }
 
-        // Generate Virtual Keyboard Keys
-        keyboardLayout.forEach((row, rowIndex) => {
-            row.forEach(key => {
-                const btn = document.createElement("button");
-                btn.textContent = key;
-                btn.className = "key-btn";
-                btn.setAttribute("data-key", key);
+        msgDisplay.textContent = "Guess the 5-letter word!";
 
-                if (key === "ENTER" || key === "BACK") {
-                    btn.classList.add("wide-key");
-                }
-
-                btn.addEventListener("click", () => handleInput(key));
-                kbRows[rowIndex].appendChild(btn);
-            });
-        });
+        // Clean virtual keyboard buttons state reset
+        const keys = document.querySelectorAll(".key-btn");
+        keys.forEach(k => k.className = "key-btn" + (k.classList.contains("wide-key") ? " wide-key" : ""));
     }
 
     function handleInput(key) {
-        // TAB VISIBILITY SAFEGUARD: Ignore input if game over or if Wordle tab is hidden
-        const wordlePage = document.getElementById("wordle-page");
         if (isGameOver) return;
-        if (wordlePage && !wordlePage.classList.contains("active")) return;
+        const upperKey = key.toUpperCase();
 
-        const dynamicKey = key.toUpperCase();
-
-        if (dynamicKey === "BACK" || dynamicKey === "BACKSPACE") {
+        if (upperKey === "BACK" || upperKey === "BACKSPACE") {
             if (currentCol > 0) {
                 currentCol--;
                 guessBuffer[currentCol] = "";
-                const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
-                tile.textContent = "";
-                tile.classList.remove("pop");
+                updateGridDisplay();
             }
-        } else if (dynamicKey === "ENTER") {
+        } else if (upperKey === "ENTER") {
             if (currentCol === 5) {
-                submitGuess();
+                checkRowGuess();
             } else {
                 msgDisplay.textContent = "Not enough letters!";
             }
-        } else if (/^[A-Z]$/.test(dynamicKey)) {
+        } else if (/^[A-Z]$/.test(upperKey)) {
             if (currentCol < 5) {
-                guessBuffer[currentCol] = dynamicKey;
-                const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
-                tile.textContent = dynamicKey;
-                tile.classList.add("pop");
+                guessBuffer[currentCol] = upperKey;
                 currentCol++;
+                updateGridDisplay();
             }
         }
     }
 
-    function submitGuess() {
-        const guess = guessBuffer.join("");
-        let targetWordLetters = secretWord.split("");
-
-        // Pass 1: Mark Exact Matches (Green / Correct)
+    function updateGridDisplay() {
+        const tiles = gridContainer.children;
+        const baseIndex = currentRow * 5;
         for (let i = 0; i < 5; i++) {
-            const tile = document.getElementById(`tile-${currentRow}-${i}`);
-            const letter = guess[i];
+            if (tiles[baseIndex + i]) {
+                tiles[baseIndex + i].textContent = guessBuffer[i];
+            }
+        }
+    }
 
-            if (letter === secretWord[i]) {
-                tile.classList.add("correct");
-                colorKey(letter, "correct");
-                targetWordLetters[i] = null;
+    function checkRowGuess() {
+        const guess = guessBuffer.join("");
+        const tiles = gridContainer.children;
+        const baseIndex = currentRow * 5;
+
+        let secretCheck = secretWord;
+        let rowStatuses = Array(5).fill("absent");
+
+        for (let i = 0; i < 5; i++) {
+            if (guess[i] === secretWord[i]) {
+                rowStatuses[i] = "correct";
+                secretCheck = secretCheck.replace(guess[i], "_");
             }
         }
 
-        // Pass 2: Mark Partial Matches (Yellow / Present) or Misplaced (Gray / Absent)
         for (let i = 0; i < 5; i++) {
-            const tile = document.getElementById(`tile-${currentRow}-${i}`);
-            const letter = guess[i];
+            if (rowStatuses[i] !== "correct" && secretCheck.includes(guess[i])) {
+                rowStatuses[i] = "present";
+                secretCheck = secretCheck.replace(guess[i], "_");
+            }
+        }
 
-            if (tile.classList.contains("correct")) continue;
-
-            const targetIndex = targetWordLetters.indexOf(letter);
-            if (targetIndex > -1) {
-                tile.classList.add("present");
-                colorKey(letter, "present");
-                targetWordLetters[targetIndex] = null;
-            } else {
-                tile.classList.add("absent");
-                colorKey(letter, "absent");
+        for (let i = 0; i < 5; i++) {
+            const tile = tiles[baseIndex + i];
+            if (tile) {
+                tile.classList.add(rowStatuses[i]);
+                colorKey(guess[i], rowStatuses[i]);
             }
         }
 
         if (guess === secretWord) {
-            msgDisplay.textContent = "🎉 Brilliant! You guessed it!";
+            msgDisplay.textContent = "🎉 Brilliant! You Won!";
             isGameOver = true;
             return;
         }
@@ -170,7 +150,33 @@ export function initWordle() {
         btn.classList.add(statusClass);
     }
 
-    // Connect hardware keyboard routing natively with tab active filters
+    // Build Virtual Touch Keyboard Layout cleanly
+    kbRows.forEach((row, rowIndex) => {
+        if (!row) return;
+        row.innerHTML = "";
+        keyboardLayout[rowIndex].forEach((key) => {
+            const btn = document.createElement("button");
+            btn.className = "key-btn";
+            btn.textContent = key;
+            btn.setAttribute("data-key", key);
+
+            if (key === "ENTER" || key === "BACK") {
+                btn.classList.add("wide-key");
+            }
+
+            btn.addEventListener("touchstart", (e) => {
+                e.preventDefault();
+                handleInput(key);
+            }, { passive: false });
+
+            btn.addEventListener("click", () => {
+                handleInput(key);
+            });
+
+            row.appendChild(btn);
+        });
+    });
+
     if (globalWordleKeyHandler) window.removeEventListener("keydown", globalWordleKeyHandler);
     globalWordleKeyHandler = (e) => {
         const wordlePage = document.getElementById("wordle-page");
@@ -181,7 +187,6 @@ export function initWordle() {
     };
     window.addEventListener("keydown", globalWordleKeyHandler);
 
-    // Setup clean listener pipeline routing for the restart button
     resetBtn.replaceWith(resetBtn.cloneNode(true));
     const newResetBtn = document.getElementById("wordle-reset-btn");
     globalWordleResetHandler = setupGame;

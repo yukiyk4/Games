@@ -54,3 +54,27 @@ export function initNavigation() {
         });
     });
 }
+
+// Add this helper function inside Snake.js, Tetris.js, or 2048.js to route mobile layouts:
+export function injectMobileDPad(callbackMove) {
+    const upBtn = document.getElementById("mobile-up");
+    const downBtn = document.getElementById("mobile-down");
+    const leftBtn = document.getElementById("mobile-left");
+    const rightBtn = document.getElementById("mobile-right");
+
+    const bindDPad = (el, directionKey) => {
+        if (!el) return;
+        el.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            callbackMove({ key: directionKey, preventDefault: () => {} });
+        }, { passive: false });
+        el.addEventListener("click", () => {
+            callbackMove({ key: directionKey, preventDefault: () => {} });
+        });
+    };
+
+    bindDPad(upBtn, "ArrowUp");
+    bindDPad(downBtn, "ArrowDown");
+    bindDPad(leftBtn, "ArrowLeft");
+    bindDPad(rightBtn, "ArrowRight");
+}

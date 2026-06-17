@@ -12,20 +12,15 @@
     padding: 10px;
 }
 
-/* 6 Rows x 5 Columns Layout Grid */
-.wordle-grid {
-    display: grid;
-    grid-template-rows: repeat(6, 1fr);
-    gap: 6px;
-    width: 310px;
-    height: 380px;
-    margin: 10px 0;
-}
-
-.wordle-row {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
+/* 💥 THIS ID MATCHES THE JS ELEMENT PERFCTLY 💥 */
+#wordle-grid {
+    display: grid !important;
+    grid-template-columns: repeat(5, 1fr) !important; /* Strictly forces 5 tiles per line */
+    grid-template-rows: repeat(6, 1fr) !important;    /* Forces exactly 6 vertical rows */
+    gap: 6px !important;
+    width: 310px !important;
+    height: 380px !important;
+    margin: 10px auto !important;
 }
 
 /* Elegant Adaptive Letter Tiles */
@@ -43,6 +38,7 @@
     user-select: none;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+    aspect-ratio: 1 / 1 !important; /* Keeps squares perfectly symmetric */
 }
 
 /* Active Character Typing Pop Animation */
@@ -53,19 +49,19 @@
 
 /* Verified Evaluated Status Colors */
 .wordle-tile.correct {
-    background-color: #538d4e !important; /* Premium Green */
+    background-color: #538d4e !important;
     border-color: #538d4e !important;
     color: #ffffff !important;
 }
 
 .wordle-tile.present {
-    background-color: #b59f3b !important; /* Premium Casino Yellow */
+    background-color: #b59f3b !important;
     border-color: #b59f3b !important;
     color: #ffffff !important;
 }
 
 .wordle-tile.absent {
-    background-color: #3a3a3c !important; /* Premium Charcoal Gray */
+    background-color: #3a3a3c !important;
     border-color: #3a3a3c !important;
     color: #ffffff !important;
 }

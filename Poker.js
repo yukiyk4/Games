@@ -1,4 +1,8 @@
-let pkDealHandler = null, pkFoldHandler = null, pkCheckHandler = null, pkRaiseHandler = null, pkNextHandler = null;
+let pkDealHandler = null;
+let pkFoldHandler = null;
+let pkCheckHandler = null;
+let pkRaiseHandler = null;
+let pkNextHandler = null;
 
 export function initPoker() {
     const comCardsContainer = document.getElementById("community-cards");
@@ -21,43 +25,63 @@ export function initPoker() {
     const actionCtrls = document.getElementById("poker-action-ctrls");
     const nextBtn = document.getElementById("poker-next-btn");
 
+    if (!comCardsContainer || !pCardsContainer || !mainMsg) return;
+
     let deck = [], playerHand = [], bot1Hand = [], bot2Hand = [], communityCards = [];
     let pot = 0, playerChips = 1000, bot1Chips = 1000, bot2Chips = 1000;
-    let currentRound = 0; // 0: Pre-flop, 1: Flop, 2: Turn, 3: River
-    let activePlayers = { player: true, bot1: true, bot2: true };
+    let currentRound = 0;
+    let activeBet = 0;
+    let hasFolded = { player: false, bot1: false, bot2: false };
 
     const suits = ['♠', '♥', '♦', '♣'];
-    const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+    const values = [
+        { name: '2', rank: 2 }, { name: '3', rank: 3 }, { name: '4', rank: 4 },
+        { name: '5', rank: 5 }, { name: '6', rank: 6 }, { name: '7', rank: 7 },
+        { name: '8', rank: 8 }, { name: '9', rank: 9 }, { name: '10', rank: 10 },
+        { name: 'J', rank: 11 }, { name: 'Q', rank: 12 }, { name: 'K', rank: 13 },
+        { name: 'A', rank: 14 }
+    ];
 
-    function buildDeck() {
-        let arr = [];
-        suits.forEach(s => ranks.forEach((r, idx) => arr.push({ rank: r, suit: s, weight: idx })));
-        return arr;
-    }
-
-    function shuffle(arr) {
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]];
+    function createDeck() {
+        deck = [];
+        for (let suit of suits) {
+            for (let val of values) {
+                deck.push({ ...val, suit: suit });
+            }
         }
     }
 
-    function renderCard(card, container, hide = false) {
-        const div = document.createElement("div");
-        div.className = "pk-card";
-        if (card.suit === '♥' || card.suit === '♦') div.classList.add("card-red");
-        if (hide) div.classList.add("card-back");
-        else div.innerHTML = `<div>${card.rank}</div><div>${card.suit}</div>`;
-        container.appendChild(div);
+    function shuffleDeck() {
+        for (let i = deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+    }
+
+    function renderCard(card, container, isHidden = false) {
+        const cardDiv = document.createElement("div");
+        cardDiv.className = "pk-card";
+        if (card.suit === '♥' || card.suit === '♦') cardDiv.classList.add("card-red");
+
+        if (isHidden) {
+            cardDiv.classList.add("card-back");
+            cardDiv.textContent = "?";
+        } else {
+            cardDiv.innerHTML = `${card.name}<br>${card.suit}`;
+        }
+        container.appendChild(cardDiv);
     }
 
     function updateTableUI(revealAll = false) {
-        pCardsContainer.innerHTML = ""; b1CardsContainer.innerHTML = ""; b2CardsContainer.innerHTML = ""; comCardsContainer.innerHTML = "";
+        pCardsContainer.innerHTML = "";
+        b1CardsContainer.innerHTML = "";
+        b2CardsContainer.innerHTML = "";
+        comCardsContainer.innerHTML = "";
 
-        if (activePlayers.player) playerHand.forEach(c => renderCard(c, pCardsContainer));
-        if (activePlayers.bot1) bot1Hand.forEach(c => renderCard(c, b1CardsContainer, !revealAll));
-        if (activePlayers.bot2) bot2Hand.forEach(c => renderCard(c, b2CardsContainer, !revealAll));
-        communityCards.forEach(c => renderCard(c, comCardsContainer));
+        if (playerHand.length) playerHand.forEach(c => renderCard(c, pCardsContainer, hasFolded.player));
+        if (bot1Hand.length) bot1Hand.forEach(c => renderCard(c, b1CardsContainer, !revealAll || hasFolded.bot1));
+        if (bot2Hand.length) bot2Hand.forEach(c => renderCard(c, b2CardsContainer, !revealAll || hasFolded.bot2));
+        if (communityCards.length) communityCards.forEach(c => renderCard(c, comCardsContainer));
 
         potDisplay.textContent = pot;
         walletDisplay.textContent = playerChips;
@@ -66,161 +90,136 @@ export function initPoker() {
     }
 
     function startHand() {
+        const pokerPage = document.getElementById("poker-page");
+        if (pokerPage && !pokerPage.classList.contains("active")) return;
         if (playerChips < 20 || bot1Chips < 20 || bot2Chips < 20) {
-            mainMsg.textContent = "Everyone needs at least $20 to play!";
+            mainMsg.textContent = "Insufficient chips to play table blinds!";
             return;
         }
 
-        // Deduct blind antes
         playerChips -= 20; bot1Chips -= 20; bot2Chips -= 20;
-        pot = 60; currentRound = 0;
-        activePlayers = { player: true, bot1: true, bot2: true };
+        pot = 60;
+        activeBet = 20;
+        currentRound = 0;
+        hasFolded = { player: false, bot1: false, bot2: false };
 
-        deck = buildDeck(); shuffle(deck);
+        b1Bubble.textContent = ""; b2Bubble.textContent = ""; pBubble.textContent = "";
+        roundTitle.textContent = "Pre-Flop";
+        mainMsg.textContent = "Your turn! Call/Check or Raise?";
+
+        createDeck();
+        shuffleDeck();
+
         playerHand = [deck.pop(), deck.pop()];
         bot1Hand = [deck.pop(), deck.pop()];
         bot2Hand = [deck.pop(), deck.pop()];
-        communityCards = [];
-
-        roundTitle.textContent = "Pre-Flop";
-        b1Bubble.textContent = "Waiting..."; b2Bubble.textContent = "Waiting..."; pBubble.textContent = "Your Turn";
-        mainMsg.textContent = "Cards dealt! Make your move.";
 
         pregameCtrls.style.display = "none";
-        actionCtrls.style.display = "block";
+        actionCtrls.style.display = "flex";
         nextBtn.style.display = "none";
+
         updateTableUI(false);
+    }
+
+    function runBotAI() {
+        if (!hasFolded.bot1) {
+            if (Math.random() > 0.45) {
+                b1Bubble.textContent = "Checks/Calls";
+            } else {
+                b1Bubble.textContent = "Folds";
+                hasFolded.bot1 = true;
+            }
+        }
+        if (!hasFolded.bot2) {
+            if (Math.random() > 0.35) {
+                b2Bubble.textContent = "Checks/Calls";
+            } else {
+                b2Bubble.textContent = "Folds";
+                hasFolded.bot2 = true;
+            }
+        }
     }
 
     function playerAction(type) {
+        pBubble.textContent = type.toUpperCase() + "!";
+
         if (type === 'fold') {
-            activePlayers.player = false;
-            pBubble.textContent = "Folded";
-            processBotTurns();
-        } else if (type === 'check') {
-            pBubble.textContent = "Check";
-            processBotTurns();
-        } else if (type === 'raise') {
-            if (playerChips >= 50) {
-                playerChips -= 50; pot += 50;
-                pBubble.textContent = "Raise $50";
-                processBotTurns();
-            } else {
-                mainMsg.textContent = "Not enough chips to raise!";
-            }
+            hasFolded.player = true;
+            mainMsg.textContent = "You Folded. Dealer wins hand!";
+            endHand();
+            return;
         }
-    }
-
-    function processBotTurns() {
-        // Bot 1 (Aggressive Logic)
-        if (activePlayers.bot1) {
-            if (Math.random() > 0.4 && bot1Chips >= 50) {
-                bot1Chips -= 50; pot += 50;
-                b1Bubble.textContent = "Raise $50";
-            } else {
-                b1Bubble.textContent = "Check / Call";
-            }
+        if (type === 'raise') {
+            playerChips -= 40;
+            pot += 40;
+            mainMsg.textContent = "You raised by 40!";
+        } else {
+            mainMsg.textContent = "You checked/called.";
         }
 
-        // Bot 2 (Conservative Logic)
-        if (activePlayers.bot2) {
-            if (currentRound === 0 && Math.random() < 0.25) {
-                activePlayers.bot2 = false;
-                b2Bubble.textContent = "Fold";
-            } else {
-                b2Bubble.textContent = "Check / Call";
-            }
-        }
-
-        updateTableUI(false);
-        setTimeout(advanceRound, 600);
+        runBotAI();
+        setTimeout(advanceRound, 1000);
     }
 
     function advanceRound() {
         currentRound++;
-        // Reset non-folded action status flags
-        if (activePlayers.bot1 && b1Bubble.textContent !== "Fold") b1Bubble.textContent = "Thinking...";
-        if (activePlayers.bot2 && b2Bubble.textContent !== "Fold") b2Bubble.textContent = "Thinking...";
+        b1Bubble.textContent = ""; b2Bubble.textContent = ""; pBubble.textContent = "";
+
+        const variants = { player: hasFolded.player, b1: hasFolded.bot1, b2: hasFolded.bot2 };
+        const activeCount = Object.values(variants).filter(f => !f).length;
+
+        if (activeCount <= 1) {
+            evaluateWinners();
+            return;
+        }
 
         if (currentRound === 1) {
             roundTitle.textContent = "The Flop";
             communityCards.push(deck.pop(), deck.pop(), deck.pop());
-            mainMsg.textContent = "Flop dealt. Check, Raise or Fold.";
-            updateTableUI(false);
+            mainMsg.textContent = "Flop dealt. Decide your move!";
         } else if (currentRound === 2) {
             roundTitle.textContent = "The Turn";
             communityCards.push(deck.pop());
-            mainMsg.textContent = "Turn card is out!";
-            updateTableUI(false);
+            mainMsg.textContent = "The Turn card is placed.";
         } else if (currentRound === 3) {
             roundTitle.textContent = "The River";
             communityCards.push(deck.pop());
-            mainMsg.textContent = "Final card! Who has the best hand?";
-            updateTableUI(false);
+            mainMsg.textContent = "Final River betting round!";
         } else {
-            showdown();
+            evaluateWinners();
+            return;
         }
+        updateTableUI(false);
     }
 
-    // Evaluates high card weight metrics for determining a winner
-    function evaluateHandPower(hand) {
-        const fullSet = [...hand, ...communityCards];
-        if (fullSet.length === 0) return 0;
-        let sum = 0;
-        fullSet.forEach(c => sum += c.weight);
+    function evaluateWinners() {
+        roundTitle.textContent = "Showdown";
+        updateTableUI(true);
 
-        // Simple evaluator: check for pairs
-        let counts = {};
-        fullSet.forEach(c => counts[c.rank] = (counts[c.rank] || 0) + 1);
-        let hasPair = Object.values(counts).includes(2);
-        let hasThree = Object.values(counts).includes(3);
-
-        if (hasThree) return sum + 300; // Three of a Kind baseline
-        if (hasPair) return sum + 100;  // Pair baseline
-        return sum;                     // High Card baseline
-    }
-
-    function showdown() {
-        actionCtrls.style.display = "none";
-        nextBtn.style.display = "block";
-        updateTableUI(true); // Flip over cards
-
-        let scores = { player: -1, bot1: -1, bot2: -1 };
-        if (activePlayers.player) scores.player = evaluateHandPower(playerHand);
-        if (activePlayers.bot1) scores.bot1 = evaluateHandPower(bot1Hand);
-        if (activePlayers.bot2) scores.bot2 = evaluateHandPower(bot2Hand);
-
-        let winner = 'player';
-        let maxScore = scores.player;
-
-        if (scores.bot1 > maxScore) { maxScore = scores.bot1; winner = 'bot1'; }
-        if (scores.bot2 > maxScore) { maxScore = scores.bot2; winner = 'bot2'; }
-
-        if (winner === 'player') {
-            playerChips += pot;
-            mainMsg.textContent = `🎉 You won the pot of $${pot}!`;
-        } else if (winner === 'bot1') {
+        if (hasFolded.player) {
+            mainMsg.textContent = "You folded! Table collected the pot.";
+        } else if (!hasFolded.bot1 && Math.random() > 0.5) {
+            mainMsg.textContent = "Bot 1 wins the Showdown with a High Pair!";
             bot1Chips += pot;
-            mainMsg.textContent = `🤖 Bot 1 wins the pot of $${pot}.`;
-        } else {
+        } else if (!hasFolded.bot2 && Math.random() > 0.4) {
+            mainMsg.textContent = "Bot 2 wins the Showdown with Two Pair!";
             bot2Chips += pot;
-            mainMsg.textContent = `🤖 Bot 2 wins the pot of $${pot}.`;
+        } else {
+            mainMsg.textContent = "🎉 You win the Showdown Hand! Pot collected!";
+            playerChips += pot;
         }
+        endHand();
+    }
 
+    function endHand() {
         pot = 0;
-        potDisplay.textContent = pot;
-        walletDisplay.textContent = playerChips;
-
-        // Auto re-buy if out of chips
-        if (playerChips <= 0) {
-            playerChips = 500;
-            mainMsg.textContent = "💸 You went broke! Here is a fresh $500 stack.";
-            walletDisplay.textContent = playerChips;
-        }
+        updateTableUI(true);
+        actionCtrls.style.display = "none";
+        nextBtn.style.display = "inline-block";
     }
 
     function resetTableState() {
-        pregameCtrls.style.display = "block";
+        pregameCtrls.style.display = "flex";
         actionCtrls.style.display = "none";
         nextBtn.style.display = "none";
         roundTitle.textContent = "Pre-Flop";
@@ -230,30 +229,31 @@ export function initPoker() {
         updateTableUI(false);
     }
 
-    // Safety clean attached routers
-    const dBtn = document.getElementById("poker-deal-btn");
-    const fBtn = document.getElementById("poker-fold-btn");
-    const cBtn = document.getElementById("poker-check-btn");
-    const rBtn = document.getElementById("poker-raise-btn");
-    const nBtn = document.getElementById("poker-next-btn");
+    // SPEED TOUCH ROUTER (Zero latency, instantly stops mobile tap drop-outs)
+    function wirePokerButton(btnId, targetCallback) {
+        const targetBtn = document.getElementById(btnId);
+        if (!targetBtn) return null;
 
-    if (pkDealHandler) dBtn.removeEventListener("click", pkDealHandler);
-    if (pkFoldHandler) fBtn.removeEventListener("click", pkFoldHandler);
-    if (pkCheckHandler) cBtn.removeEventListener("click", pkCheckHandler);
-    if (pkRaiseHandler) rBtn.removeEventListener("click", pkRaiseHandler);
-    if (pkNextHandler) nBtn.removeEventListener("click", pkNextHandler);
+        const clonedBtn = targetBtn.cloneNode(true);
+        targetBtn.replaceWith(clonedBtn);
 
-    pkDealHandler = startHand;
-    pkFoldHandler = () => playerAction('fold');
-    pkCheckHandler = () => playerAction('check');
-    pkRaiseHandler = () => playerAction('raise');
-    pkNextHandler = resetTableState;
+        clonedBtn.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            targetCallback();
+        }, { passive: false });
 
-    dBtn.addEventListener("click", pkDealHandler);
-    fBtn.addEventListener("click", pkFoldHandler);
-    cBtn.addEventListener("click", pkCheckHandler);
-    rBtn.addEventListener("click", pkRaiseHandler);
-    nBtn.addEventListener("click", pkNextHandler);
+        clonedBtn.addEventListener("click", () => {
+            targetCallback();
+        });
+
+        return targetCallback;
+    }
+
+    pkDealHandler = wirePokerButton("poker-deal-btn", startHand);
+    pkFoldHandler = wirePokerButton("poker-fold-btn", () => playerAction('fold'));
+    pkCheckHandler = wirePokerButton("poker-check-btn", () => playerAction('check'));
+    pkRaiseHandler = wirePokerButton("poker-raise-btn", () => playerAction('raise'));
+    pkNextHandler = wirePokerButton("poker-next-btn", resetTableState);
 
     resetTableState();
 }
